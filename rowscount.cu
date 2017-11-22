@@ -45,7 +45,7 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
       // загрузка подстрок в кеш __shared__
       for (int r = 0; r < 64; r++)
       {
-        cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4)*cols + th % 64];
+        cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4)*cols + (th % 64)* rows];
       }
       __syncthreads();
       // вычисление кол-ва пикселей
