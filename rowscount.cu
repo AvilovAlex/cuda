@@ -15,7 +15,6 @@ using namespace std;
         exit(1);                                                            \
     } }
 
-
 __global__ void calc(uchar *source, int *res, int rows, int cols)
 {
     int regres = 0;
@@ -48,9 +47,12 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
         cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4)*cols + (th % 64)* rows];
       }
       __syncthreads();
-      // вычисление кол-ва пикселей
-      uchar3 w = cashe_tile[0][0]; /*TODO*/
-      regres += w.x + w.y + w.z < 700;
+      for (int j = 0; j < TILE_WIDTH; j++)
+      {
+        // вычисление кол-ва пикселей
+        uchar3 w = cashe_tile[th][j];
+        regres += w.x + w.y + w.z < 700;
+      }
       __syncthreads();
     }
     res[i] = regres;
@@ -106,6 +108,7 @@ int main()
     //==============================GPU calculation==============================
 
     uchar *dev_img;
+    uchar3 *dev3_img;
     int *res_arr;
 
     for (int i = 0; i < image.rows; i++)
@@ -114,6 +117,8 @@ int main()
     CHECK( cudaMalloc(&dev_img, 3*image.rows*image.cols));
     CHECK( cudaMemcpy(dev_img, image.data, 3*image.rows*image.cols,cudaMemcpyHostToDevice));
 
+    CHECK( cudaMalloc(&dev3_img, 3*image.rows*image.cols));
+    CHECK( cudaMemcpy(dev3_img, image.data, 3*image.rows*image.cols,cudaMemcpyHostToDevice));
     //res Array
     CHECK( cudaMalloc(&res_arr, image.rows*sizeof(int)));
     CHECK( cudaMemcpy(res_arr, procres, image.rows*sizeof(int),cudaMemcpyHostToDevice));
@@ -122,7 +127,8 @@ int main()
     cudaEventCreate(&stopCUDA);
     cudaEventRecord(startCUDA,0);
 
-    calc<<< (image.rows+255)/256, 256>>>(dev_img, res_arr, image.rows, image.cols);
+    //calc<<< (image.rows+255)/256, 256>>>(dev_img, res_arr, image.rows, image.cols);
+    sharedCalc<<< (image.rows+255)/256, 256>>>(dev3_img, res_arr, image.rows, image.cols);
 
     cudaEventRecord(stopCUDA,0);
     cudaEventSynchronize(stopCUDA);
