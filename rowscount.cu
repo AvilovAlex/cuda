@@ -34,7 +34,9 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
 {
     int regres = 0;
     int i = threadIdx.x + blockIdx.x*blockDim.x;
+    int bx = blockIdx.x;
     int th = threadIdx.x;
+    int blockSize = blockDim.x;
     if (i >= rows) return;
 
     __shared__ uchar3 cashe_tile[256][TILE_WIDTH];
@@ -44,7 +46,7 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
       // загрузка подстрок в кеш __shared__
       for (int r = 0; r < 64; r++)
       {
-        cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4)*cols + (th % 64)* rows];
+        cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4 + +bx*blockSize)*cols + (th % 64 + p*64)];
       }
       __syncthreads();
       for (int j = 0; j < TILE_WIDTH; j++)
