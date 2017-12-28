@@ -28,7 +28,7 @@ __global__ void calc(uchar *source, int *res, int rows, int cols)
       res[i] = regres;
 }
 
-#define TILE_WIDTH 64
+#define TILE_WIDTH 32
 
 __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
 {
@@ -38,15 +38,16 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
     int th = threadIdx.x;
     int blockSize = blockDim.x;
     if (i >= rows) return;
-
-    __shared__ uchar3 cashe_tile[256][TILE_WIDTH];
+    __shared__ uchar3 cashe_tile[256][TILE_WIDTH ];
 
     for(int p = 0; p < cols/TILE_WIDTH; ++p) //8
     {
       // загрузка подстрок в кеш __shared__
-      for (int r = 0; r < 64; r++)
+      for (int r = 0; r < TILE_WIDTH; r++)
       {
-        cashe_tile[th / 64 + r * 4][th % 64] = source[(th / 64 + r * 4 + +bx*blockSize)*cols + (th % 64 + p*64)];
+        int ind = th / TILE_WIDTH + r * 256/TILE_WIDTH;
+        cashe_tile[ind][th % TILE_WIDTH] =
+           source[(ind + bx*blockSize)*cols + (th % TILE_WIDTH + p*TILE_WIDTH)];
       }
       __syncthreads();
       for (int j = 0; j < TILE_WIDTH; j++)
@@ -60,8 +61,9 @@ __global__ void sharedCalc(uchar3 *source, int *res, int rows, int cols)
     res[i] = regres;
 }
 
-int main()
+int main(int Argscount, char** Args)
 {
+  // std::cout << Args[1] << "\n";
   cudaEvent_t startCUDA, stopCUDA;
   //clock_t startCPU;
   float elapsedTimeCUDA;
@@ -113,8 +115,10 @@ int main()
     uchar3 *dev3_img;
     int *res_arr;
 
+    int * newProcres = new int[image.rows];
+
     for (int i = 0; i < image.rows; i++)
-      procres[i] = 0;
+      newProcres[i] = 0;
     //source image
     CHECK( cudaMalloc(&dev_img, 3*image.rows*image.cols));
     CHECK( cudaMemcpy(dev_img, image.data, 3*image.rows*image.cols,cudaMemcpyHostToDevice));
@@ -123,28 +127,32 @@ int main()
     CHECK( cudaMemcpy(dev3_img, image.data, 3*image.rows*image.cols,cudaMemcpyHostToDevice));
     //res Array
     CHECK( cudaMalloc(&res_arr, image.rows*sizeof(int)));
-    CHECK( cudaMemcpy(res_arr, procres, image.rows*sizeof(int),cudaMemcpyHostToDevice));
+    CHECK( cudaMemcpy(res_arr, newProcres, image.rows*sizeof(int),cudaMemcpyHostToDevice));
 
     cudaEventCreate(&startCUDA);
     cudaEventCreate(&stopCUDA);
     cudaEventRecord(startCUDA,0);
-
     //calc<<< (image.rows+255)/256, 256>>>(dev_img, res_arr, image.rows, image.cols);
-    sharedCalc<<< (image.rows+255)/256, 256>>>(dev3_img, res_arr, image.rows, image.cols);
-
+    // for (it = 0; it < 64; it++)
+    if (Argscount == 2)
+      sharedCalc<<< (image.rows+255)/256, 256>>>(dev3_img, res_arr, image.rows, image.cols);
+    else
+      calc<<< (image.rows+255)/256, 256>>>(dev_img, res_arr, image.rows, image.cols);
     cudaEventRecord(stopCUDA,0);
     cudaEventSynchronize(stopCUDA);
     CHECK(cudaGetLastError());
     cudaEventElapsedTime(&elapsedTimeCUDA, startCUDA, stopCUDA);
-    CHECK( cudaMemcpy(procres, res_arr, image.rows*sizeof(int), cudaMemcpyDeviceToHost));
+    CHECK( cudaMemcpy(newProcres, res_arr, image.rows*sizeof(int), cudaMemcpyDeviceToHost));
 
     //============================end GPU calculation============================
-    // for (int i = 0; i < image.rows; i++)
-      // cout << procres[i] << endl;
+    bool ok = true;
+    for (int i = 0; (i < image.rows)&&(ok); i++)
+      ok = procres[i]==newProcres[i];
 
     cout << "CUDA sum time = " << elapsedTimeCUDA << " ms\n";
     //cout << "CUDA memory throughput = " << 3*image.rows*image.cols*2/elapsedTimeCUDA/1024/1024/1.024 << " Gb/s\n";
-
+    const char* res = ok ? "True" : "False";
+    cout << "Result are " << res << "\n";
     // check
     return 0;
 }
